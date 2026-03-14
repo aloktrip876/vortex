@@ -56,6 +56,20 @@ def base_opts():
         "socket_timeout": 30,
         "noplaylist": True,
     }
+
+    # Allow using cookies to bypass YouTube "not a bot" / age-restricted checks.
+    # Examples:
+    #   set YTDLP_COOKIES_FROM_BROWSER=chrome
+    #   set YTDLP_COOKIE_FILE=path\to\cookies.txt
+    cookies_from_browser = os.environ.get("YTDLP_COOKIES_FROM_BROWSER")
+    if cookies_from_browser:
+        # yt-dlp expects a tuple/list for this option
+        opts["cookiesfrombrowser"] = tuple(c.strip() for c in cookies_from_browser.split(",") if c.strip())
+
+    cookie_file = os.environ.get("YTDLP_COOKIE_FILE")
+    if cookie_file:
+        opts["cookiefile"] = cookie_file
+
     if FFMPEG_PATH:
         # Help yt-dlp find ffmpeg even if PATH is inconsistent.
         opts["ffmpeg_location"] = FFMPEG_PATH
@@ -168,6 +182,21 @@ def health():
         "ffmpeg_path": FFMPEG_PATH or "",
     })
 
+def _format_yt_dlp_error(exc: Exception) -> str:
+    """Normalize common yt-dlp errors into friendlier messages."""
+    msg = str(exc)
+    if "Sign in to confirm you\'re not a bot" in msg or "sign in to confirm" in msg.lower():
+        return (
+            "yt-dlp is blocked by YouTube bot-protection. "
+            "Set YTDLP_COOKIES_FROM_BROWSER or YTDLP_COOKIE_FILE and restart the app. "
+            "See README for details."
+        )
+    if "This video is unavailable" in msg or "video unavailable" in msg.lower():
+        return ("The video may be private, deleted, or blocked in your region. "
+                "Try a different URL.")
+    return msg
+
+
 @app.route("/api/info", methods=["POST"])
 def api_info():
     data = request.get_json(force=True) or {}
@@ -180,7 +209,7 @@ def api_info():
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
     except yt_dlp.utils.DownloadError as e:
-        return jsonify({"error": str(e)}), 422
+        return jsonify({"error": _format_yt_dlp_error(e)}), 422
     except Exception as e:
         return jsonify({"error": f"Failed to fetch info: {e}"}), 500
 
@@ -276,8 +305,9 @@ def _worker(job_id, url, fmt, quality):
             jobs[job_id].update({"status":"done","progress":100,
                                   "file_path":str(final_path),"filename":final_name})
     except Exception as e:
+        err = _format_yt_dlp_error(e)
         with jobs_lock:
-            jobs[job_id].update({"status":"error","error":str(e)})
+            jobs[job_id].update({"status":"error","error":err})
 
 @app.route("/api/status/<job_id>")
 def api_status(job_id):
