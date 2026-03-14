@@ -89,12 +89,15 @@ def base_opts(cookiefile=None):
         "geo_bypass": True,
         "socket_timeout": 30,
         "noplaylist": True,
-        # Try multiple YouTube clients in order — android/tv_embedded bypass
-        # bot-protection without needing cookies in most cases
+        # Use web client with PO Token provider to bypass bot protection
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "tv_embedded", "web_creator", "web"],
-            }
+                "player_client": ["web"],
+            },
+            # Tell yt-dlp where the bgutil POT provider script lives
+            "youtubepot-bgutilscript": {
+                "server_home": "/bgutil/server",
+            },
         },
         "http_headers": {
             "User-Agent": (
