@@ -78,8 +78,7 @@ h1 .ac{color:var(--accent);text-shadow:0 0 50px rgba(214,249,78,.3)}
 .upfx{display:flex;align-items:center;padding:0 1.1rem;color:var(--muted);font-size:1rem;border-right:1px solid var(--border);flex-shrink:0}
 #urlInput{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-family:var(--ff-body);font-size:.82rem;padding:1rem 1.2rem;letter-spacing:.02em}
 #urlInput::placeholder{color:var(--muted)}
-#cookiesInput{width:100%;min-height:90px;margin-top:0.85rem;background:transparent;border:1px solid var(--border);outline:none;color:var(--text);font-family:var(--ff-body);font-size:.75rem;padding:0.9rem 1rem;letter-spacing:.02em;resize:vertical;}
-#cookiesInput::placeholder{color:var(--muted)}
+
 .ubtns{display:flex;border-left:1px solid var(--border)}
 .ubtn{background:none;border:none;border-left:1px solid var(--border);color:var(--muted);cursor:pointer;padding:0 1.1rem;font-family:var(--ff-body);font-size:.58rem;letter-spacing:.15em;text-transform:uppercase;transition:color .2s;white-space:nowrap}
 .ubtn:first-child{border-left:none}
@@ -248,8 +247,7 @@ footer .tline{font-family:var(--ff-display);font-size:.95rem;letter-spacing:.22e
     </div>
     <div class="errmsg" id="errmsg"></div>
 
-    <label class="flabel" for="cookiesInput">Cookies (optional)</label>
-    <textarea id="cookiesInput" placeholder="Paste cookies.txt contents here to bypass YouTube login checks"></textarea>
+
   </div>
 
   <div id="results">
@@ -401,7 +399,7 @@ async function analyzeURL(){
   setFP(10,'Connecting to server...');
   try{
     setFP(30,'Fetching video metadata...');
-    var res=await fetch('/api/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url,cookies:($('cookiesInput').value||"").trim()})});
+    var res=await fetch('/api/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})});
     setFP(75,'Parsing formats...');
     var data=await res.json();
     if(!res.ok||data.error)throw new Error(data.error||'Could not fetch video info.');
@@ -472,7 +470,7 @@ async function startDownload(){
   var btn=$('dlbtn');btn.disabled=true;$('dldone').classList.remove('show');$('dlprog').classList.add('show');
   setDL(0,'Queuing job...');
   try{
-    var res=await fetch('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:state.url,format:state.fmt,quality:state.quality,cookies:($('cookiesInput').value||"").trim()})});
+    var res=await fetch('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:state.url,format:state.fmt,quality:state.quality})});
     var data=await res.json();
     if(!res.ok||data.error)throw new Error(data.error||'Failed to start.');
     state.jobId=data.job_id;setDL(5,'Job started...');
