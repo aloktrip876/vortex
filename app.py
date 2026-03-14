@@ -70,6 +70,11 @@ def base_opts():
     if cookie_file:
         opts["cookiefile"] = cookie_file
 
+    # If the user hasn't explicitly set cookie options, try using Chrome cookies by default.
+    # This helps bypass YouTube "sign in to confirm you're not a bot" checks on many machines.
+    if not cookies_from_browser and not cookie_file:
+        opts["cookiesfrombrowser"] = ("chrome",)
+
     if FFMPEG_PATH:
         # Help yt-dlp find ffmpeg even if PATH is inconsistent.
         opts["ffmpeg_location"] = FFMPEG_PATH
