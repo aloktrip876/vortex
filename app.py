@@ -85,23 +85,14 @@ def base_opts(cookiefile=None):
     elif cookie_file_env:
         opts["cookiefile"] = cookie_file_env
 
-    # Only use browser cookies if explicitly requested (via env var or UI).
-    # Some environments (e.g. containers) don't have a Chrome profile and will error otherwise.
-    # You can still provide cookies via the UI or YTDLP_COOKIE_FILE.
-    if cookies_from_browser:
-        opts["cookiesfrombrowser"] = tuple(c.strip() for c in cookies_from_browser.split(",") if c.strip())
-
     if FFMPEG_PATH:
         # Help yt-dlp find ffmpeg even if PATH is inconsistent.
         opts["ffmpeg_location"] = FFMPEG_PATH
 
-    # ── YouTube bot-protection bypass ────────────────────────────────────────
-    # Use the "web_creator" or "mweb" client which is less aggressively
-    # bot-checked than the default "web" client.
+    # Use alternate YouTube clients that bypass bot-protection without needing cookies.
     opts["extractor_args"] = {
         "youtube": {
-            "player_client": ["web_creator", "mweb", "android"],
-            "skip": ["hls", "dash"],
+            "player_client": ["android", "web_creator"],
         }
     }
 
