@@ -188,13 +188,13 @@ def build_opts(fmt: str, quality: str, job_id: str, cookie_file=None):
         h = QUALITY_HEIGHT.get(quality, 1080)
         if FFMPEG_AVAILABLE:
             fmt_selector = (
-                f"bestvideo[height<={h}]+bestaudio/bestvideo[height<={h}]/best[height<={h}]/best"
+                f"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={h}]+bestaudio/bestvideo[height<={h}]/best[height<={h}]/best/bestvideo+bestaudio/best"
             )
             if ext != "webm":
                 postprocessors.append({"key": "FFmpegVideoConvertor", "preferedformat": ext})
             merge_fmt = ext
         else:
-            fmt_selector = f"best[height<={h}]/best"
+            fmt_selector = f"best[height<={h}]/best/bestvideo+bestaudio/best"
             merge_fmt = None
 
     def progress_hook(d):
