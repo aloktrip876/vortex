@@ -32,7 +32,8 @@ RUN pip install --no-cache-dir bgutil-ytdlp-pot-provider
 
 COPY . /app
 
-ENV PORT=5000
-EXPOSE 5000
+ENV PORT=8080
+EXPOSE 8080
 
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:5000", "--workers", "2", "--threads", "4", "--timeout", "120"]
+# Shell form so $PORT env var is expanded correctly by Railway
+CMD gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120
