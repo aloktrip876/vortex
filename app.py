@@ -47,7 +47,20 @@ def _cleanup():
 threading.Thread(target=_cleanup, daemon=True).start()
 
 # ── yt-dlp helpers ────────────────────────────────────────────────────────────
-def base_opts():
+
+def _write_cookie_file(text: str):
+    """Write a cookies.txt string to a temp file and return the path."""
+    if not text:
+        return None
+    p = DOWNLOAD_DIR / f"cookies_{uuid.uuid4().hex}.txt"
+    try:
+        p.write_text(text, encoding="utf-8")
+        return p
+    except Exception:
+        return None
+
+
+def base_opts(cookiefile=None):
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -66,13 +79,15 @@ def base_opts():
         # yt-dlp expects a tuple/list for this option
         opts["cookiesfrombrowser"] = tuple(c.strip() for c in cookies_from_browser.split(",") if c.strip())
 
-    cookie_file = os.environ.get("YTDLP_COOKIE_FILE")
-    if cookie_file:
-        opts["cookiefile"] = cookie_file
+    cookie_file_env = os.environ.get("YTDLP_COOKIE_FILE")
+    if cookiefile:
+        opts["cookiefile"] = str(cookiefile)
+    elif cookie_file_env:
+        opts["cookiefile"] = cookie_file_env
 
     # If the user hasn't explicitly set cookie options, try using Chrome cookies by default.
     # This helps bypass YouTube "sign in to confirm you're not a bot" checks on many machines.
-    if not cookies_from_browser and not cookie_file:
+    if not cookies_from_browser and not cookiefile and not cookie_file_env:
         opts["cookiesfrombrowser"] = ("chrome",)
 
     if FFMPEG_PATH:
@@ -118,7 +133,7 @@ AUDIO_KBPS = {
     "192 kbps": "192", "128 kbps": "128",
 }
 
-def build_opts(fmt: str, quality: str, job_id: str):
+def build_opts(fmt: str, quality: str, job_id: str, cookie_file=None):
     f = FORMAT_MAP.get(fmt, FORMAT_MAP["MP4"])
     ext = f["ext"]
     audio_only = f["audio_only"]
@@ -160,7 +175,7 @@ def build_opts(fmt: str, quality: str, job_id: str):
                 jobs[job_id].update({"status": "processing", "progress": 96})
 
     opts = {
-        **base_opts(),
+        **base_opts(cookiefile=cookie_file),
         "outtmpl": out_tmpl,
         "format": fmt_selector,
         "progress_hooks": [progress_hook],
@@ -193,7 +208,7 @@ def _format_yt_dlp_error(exc: Exception) -> str:
     if "Sign in to confirm you\'re not a bot" in msg or "sign in to confirm" in msg.lower():
         return (
             "yt-dlp is blocked by YouTube bot-protection. "
-            "Set YTDLP_COOKIES_FROM_BROWSER or YTDLP_COOKIE_FILE and restart the app. "
+            "Provide cookies (via environment vars or the UI) so yt-dlp can authenticate. "
             "See README for details."
         )
     if "This video is unavailable" in msg or "video unavailable" in msg.lower():
@@ -209,14 +224,23 @@ def api_info():
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
+    cookies = (data.get("cookies") or "").strip()
+    cookie_file = _write_cookie_file(cookies) if cookies else None
+
     try:
-        opts = {**base_opts(), "skip_download": True}
+        opts = {**base_opts(cookiefile=cookie_file), "skip_download": True}
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
     except yt_dlp.utils.DownloadError as e:
         return jsonify({"error": _format_yt_dlp_error(e)}), 422
     except Exception as e:
         return jsonify({"error": f"Failed to fetch info: {e}"}), 500
+    finally:
+        if cookie_file and cookie_file.exists():
+            try:
+                cookie_file.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     # Collect heights
     heights = set()
@@ -263,9 +287,11 @@ def api_info():
 @app.route("/api/download", methods=["POST"])
 def api_download():
     data    = request.get_json(force=True) or {}
-    url     = data.get("url","").strip()
-    fmt     = data.get("format","MP4").upper()
-    quality = data.get("quality","1080p")
+    url     = data.get("url", "").strip()
+    fmt     = data.get("format", "MP4").upper()
+    quality = data.get("quality", "1080p")
+    cookies = (data.get("cookies") or "").strip()
+    cookie_file = _write_cookie_file(cookies) if cookies else None
 
     if not url:
         return jsonify({"error": "No URL"}), 400
@@ -276,15 +302,15 @@ def api_download():
     with jobs_lock:
         jobs[job_id] = {"status":"queued","progress":0,"file_path":None,"error":None,"filename":None}
 
-    t = threading.Thread(target=_worker, args=(job_id, url, fmt, quality), daemon=True)
+    t = threading.Thread(target=_worker, args=(job_id, url, fmt, quality, cookie_file), daemon=True)
     t.start()
     return jsonify({"job_id": job_id})
 
-def _worker(job_id, url, fmt, quality):
+def _worker(job_id, url, fmt, quality, cookie_file=None):
     with jobs_lock:
         jobs[job_id]["status"] = "starting"
     try:
-        opts = build_opts(fmt, quality, job_id)
+        opts = build_opts(fmt, quality, job_id, cookie_file)
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
         title = sanitize(info.get("title","video"))
@@ -313,6 +339,12 @@ def _worker(job_id, url, fmt, quality):
         err = _format_yt_dlp_error(e)
         with jobs_lock:
             jobs[job_id].update({"status":"error","error":err})
+    finally:
+        if cookie_file and cookie_file.exists():
+            try:
+                cookie_file.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 @app.route("/api/status/<job_id>")
 def api_status(job_id):
