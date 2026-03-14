@@ -187,14 +187,19 @@ def build_opts(fmt: str, quality: str, job_id: str, cookie_file=None):
     else:
         h = QUALITY_HEIGHT.get(quality, 1080)
         if FFMPEG_AVAILABLE:
+            # Use simple selectors that work for both regular videos and Shorts
             fmt_selector = (
-                f"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={h}]+bestaudio/bestvideo[height<={h}]/best[height<={h}]/best/bestvideo+bestaudio/best"
+                f"bestvideo[height<={h}]+bestaudio"
+                f"/bestvideo[height<={h}]"
+                f"/best[height<={h}]"
+                f"/bestvideo+bestaudio"
+                f"/best"
             )
             if ext != "webm":
                 postprocessors.append({"key": "FFmpegVideoConvertor", "preferedformat": ext})
             merge_fmt = ext
         else:
-            fmt_selector = f"best[height<={h}]/best/bestvideo+bestaudio/best"
+            fmt_selector = f"best[height<={h}]/best[height<=1080]/best"
             merge_fmt = None
 
     def progress_hook(d):
