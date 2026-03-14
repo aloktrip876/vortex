@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VORTEX - Video Downloader</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/icon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/icon-16.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#08080b;--surface:#0f0f14;--surface2:#161620;
+  --border:#252530;--border2:#32323f;
+  --accent:#d6f94e;--accent-dim:rgba(214,249,78,0.1);--accent-glow:rgba(214,249,78,0.25);
+  --red:#ff4454;--red-dim:rgba(255,68,84,0.1);
+  --text:#ececf1;--text2:#a0a0b8;--muted:#55556a;
+  --ff-display:'Bebas Neue',sans-serif;
+  --ff-body:'DM Mono',monospace;
+  --ff-ui:'Syne',sans-serif;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--ff-body);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;
+  background-image:linear-gradient(rgba(214,249,78,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(214,249,78,.025) 1px,transparent 1px);
+  background-size:52px 52px;pointer-events:none;z-index:0}
+.glow{position:fixed;top:-300px;left:50%;transform:translateX(-50%);width:900px;height:700px;
+  background:radial-gradient(ellipse,rgba(214,249,78,.055) 0%,transparent 65%);pointer-events:none;z-index:0}
+@keyframes scan{0%{top:-2px}100%{top:100vh}}
+.scanline{position:fixed;left:0;right:0;height:2px;
+  background:linear-gradient(transparent,rgba(214,249,78,.04),transparent);
+  animation:scan 10s linear infinite;pointer-events:none;z-index:1}
+
+/* header */
+header{position:relative;z-index:10;padding:1.6rem 3rem;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)}
+.logo{font-family:var(--ff-display);font-size:2rem;letter-spacing:.18em;color:var(--accent);text-shadow:0 0 28px rgba(214,249,78,.45)}
+.logo em{color:var(--text);font-style:normal}
+.hdr-right{display:flex;gap:.8rem;align-items:center}
+.badge{font-size:.6rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);padding:.32rem .75rem}
+.sdot{width:7px;height:7px;border-radius:50%;background:var(--muted);transition:background .4s,box-shadow .4s}
+.sdot.live{background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pdot 2s ease infinite}
+@keyframes pdot{0%,100%{opacity:1}50%{opacity:.5}}
+
+/* server banner */
+#serverBanner{display:none;position:fixed;top:0;left:0;right:0;z-index:999;
+  background:var(--red);color:#fff;font-family:var(--ff-body);font-size:.72rem;
+  letter-spacing:.1em;padding:.7rem 1.5rem;text-align:center}
+#serverBanner.show{display:block}
+#serverBanner a{color:#fff;text-decoration:underline}
+
+/* main */
+main{position:relative;z-index:10;max-width:920px;margin:0 auto;padding:4rem 2rem 5rem}
+
+/* hero */
+.eyebrow{font-size:.62rem;letter-spacing:.25em;text-transform:uppercase;color:var(--muted);
+  display:flex;align-items:center;gap:.8rem;margin-bottom:1rem}
+.eyebrow::before{content:'';width:32px;height:1px;background:var(--muted)}
+h1{font-family:var(--ff-display);font-size:clamp(3.5rem,11vw,8rem);line-height:.88;letter-spacing:.04em;margin-bottom:1.5rem}
+h1 .ac{color:var(--accent);text-shadow:0 0 50px rgba(214,249,78,.3)}
+
+/* platform pills */
+.pills{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:3rem}
+.ppill{font-size:.6rem;letter-spacing:.14em;text-transform:uppercase;padding:.38rem .85rem;
+  border:1px solid var(--border);color:var(--muted);background:var(--surface);transition:all .2s;cursor:default}
+.ppill.lit{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+
+/* input card */
+.icard{background:var(--surface);border:1px solid var(--border);padding:2rem;margin-bottom:2rem;position:relative}
+.icard::before{content:'';position:absolute;left:0;top:0;width:3px;height:100%;background:linear-gradient(180deg,var(--accent),transparent)}
+.flabel{font-size:.58rem;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:.75rem;display:block}
+.urow{display:flex;border:1px solid var(--border);background:var(--bg);transition:border-color .25s,box-shadow .25s;overflow:hidden}
+.urow:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
+.upfx{display:flex;align-items:center;padding:0 1.1rem;color:var(--muted);font-size:1rem;border-right:1px solid var(--border);flex-shrink:0}
+#urlInput{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-family:var(--ff-body);font-size:.82rem;padding:1rem 1.2rem;letter-spacing:.02em}
+#urlInput::placeholder{color:var(--muted)}
+.ubtns{display:flex;border-left:1px solid var(--border)}
+.ubtn{background:none;border:none;border-left:1px solid var(--border);color:var(--muted);cursor:pointer;padding:0 1.1rem;font-family:var(--ff-body);font-size:.58rem;letter-spacing:.15em;text-transform:uppercase;transition:color .2s;white-space:nowrap}
+.ubtn:first-child{border-left:none}
+.ubtn:hover{color:var(--accent)}
+.abtn{width:100%;margin-top:1.2rem;background:var(--accent);color:#08080b;border:none;font-family:var(--ff-display);font-size:1.35rem;letter-spacing:.15em;padding:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.8rem;transition:transform .15s,box-shadow .25s,opacity .2s;overflow:hidden;position:relative}
+.abtn::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent);transform:translateX(-100%);transition:transform .5s}
+.abtn:not(:disabled):hover::after{transform:translateX(100%)}
+.abtn:not(:disabled):hover{box-shadow:0 6px 24px rgba(214,249,78,.4);transform:translateY(-1px)}
+.abtn:disabled{opacity:.45;cursor:not-allowed}
+
+/* fetch progress */
+.fprog{margin-top:1.2rem;display:none}
+.fprog.show{display:block}
+.fpbar{height:2px;background:var(--border);overflow:hidden}
+.fpfill{height:100%;background:var(--accent);width:0%;transition:width .4s ease;box-shadow:0 0 8px var(--accent)}
+.fplbl{font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;color:var(--text2);margin-top:.55rem}
+
+/* error */
+.errmsg{display:none;margin-top:1rem;background:var(--red-dim);border:1px solid var(--red);padding:.85rem 1.1rem;color:var(--red);font-size:.72rem;letter-spacing:.07em}
+.errmsg.show{display:block;animation:fi .25s}
+@keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* results */
+#results{display:none;animation:fi .4s cubic-bezier(.22,1,.36,1)}
+#results.show{display:block}
+.divider{display:flex;align-items:center;gap:1.2rem;margin:2.5rem 0 2rem;font-size:.58rem;letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* video info */
+.vinfo{background:var(--surface);border:1px solid var(--border);display:grid;grid-template-columns:200px 1fr;overflow:hidden;margin-bottom:2rem;position:relative}
+.vinfo::before{content:'';position:absolute;left:0;top:0;width:3px;height:100%;background:var(--accent)}
+.thumb{background:var(--surface2);display:flex;align-items:center;justify-content:center;aspect-ratio:16/9;overflow:hidden}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thico{font-size:2.5rem;color:var(--muted)}
+.vdet{padding:1.5rem 1.8rem;display:flex;flex-direction:column;gap:.5rem}
+.vtitle{font-family:var(--ff-ui);font-size:.95rem;font-weight:700;line-height:1.3;color:var(--text)}
+.mchips{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.5rem}
+.mc{font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.mc b{color:var(--text2);font-weight:400}
+.pbadge{display:inline-block;margin-top:.3rem;font-size:.58rem;letter-spacing:.15em;text-transform:uppercase;background:var(--accent);color:#08080b;padding:.22rem .6rem;font-weight:700}
+
+/* format / quality */
+.slabel{font-size:.58rem;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:1rem}
+.fmtgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:.65rem;margin-bottom:2rem}
+.fc{border:1px solid var(--border);background:var(--surface);padding:1rem 1.2rem;cursor:pointer;position:relative;overflow:hidden;transition:border-color .18s,background .18s}
+.fc::after{content:'';position:absolute;inset:0;background:var(--accent-dim);opacity:0;transition:opacity .18s}
+.fc:hover{border-color:var(--border2)}
+.fc:hover::after{opacity:.6}
+.fc.sel{border-color:var(--accent);background:rgba(214,249,78,.04)}
+.fc.sel::after{opacity:1}
+.fn{font-family:var(--ff-display);font-size:1.55rem;letter-spacing:.08em;color:var(--text);position:relative;z-index:1;transition:color .18s}
+.fc.sel .fn{color:var(--accent)}
+.fsub{font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:.15rem;position:relative;z-index:1}
+.fbest{position:absolute;top:.45rem;right:.45rem;z-index:2;font-size:.52rem;letter-spacing:.1em;text-transform:uppercase;background:var(--accent);color:#08080b;padding:.15rem .4rem}
+.qrow{display:flex;flex-wrap:wrap;gap:.55rem;margin-bottom:2.5rem}
+.qp{border:1px solid var(--border);background:var(--surface);color:var(--muted);padding:.5rem 1.1rem;font-family:var(--ff-body);font-size:.7rem;letter-spacing:.1em;cursor:pointer;transition:all .18s}
+.qp:hover{border-color:var(--border2);color:var(--text)}
+.qp.sel{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.qp.mute{border-color:var(--red);color:var(--red);background:var(--red-dim)}
+.qp.mute::after{content:' MUTE';font-size:.55rem;letter-spacing:.12em;color:var(--red);margin-left:.45rem}
+
+/* download */
+.dlrow{display:flex;gap:.75rem;flex-wrap:wrap}
+.dlbtn{flex:1;min-width:200px;background:var(--accent);color:#08080b;border:none;font-family:var(--ff-display);font-size:1.3rem;letter-spacing:.15em;padding:1rem 2rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.7rem;transition:all .2s;position:relative;overflow:hidden}
+.dlbtn::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);transform:translateX(-100%);transition:transform .5s}
+.dlbtn:not(:disabled):hover::after{transform:translateX(100%)}
+.dlbtn:not(:disabled):hover{box-shadow:0 6px 24px rgba(214,249,78,.38);transform:translateY(-1px)}
+.dlbtn:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+.cpbtn{background:var(--surface);color:var(--text);border:1px solid var(--border);font-family:var(--ff-body);font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;padding:1rem 1.4rem;cursor:pointer;transition:all .2s;white-space:nowrap}
+.cpbtn:hover{border-color:var(--text2)}
+.dlprog{margin-top:1.5rem;display:none}
+.dlprog.show{display:block;animation:fi .3s}
+.dlph{display:flex;justify-content:space-between;font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text2);margin-bottom:.6rem}
+.dlbar{height:3px;background:var(--border);overflow:hidden}
+.dlfill{height:100%;background:linear-gradient(90deg,var(--accent),rgba(214,249,78,.55));width:0%;transition:width .3s;box-shadow:0 0 10px var(--accent)}
+.dldone{margin-top:1rem;background:rgba(214,249,78,.07);border:1px solid var(--accent);padding:.85rem 1.2rem;display:none;align-items:center;gap:1rem}
+.dldone.show{display:flex;animation:fi .3s}
+.ddico{font-size:1.3rem}
+.ddtxt{font-size:.68rem;letter-spacing:.1em;color:var(--accent)}
+.ddtxt b{display:block;font-family:var(--ff-ui);font-size:.8rem}
+
+/* notice */
+.notice{margin-top:3.5rem;padding:1.3rem 1.5rem;border:1px solid var(--border);background:var(--surface);display:grid;grid-template-columns:auto 1fr;gap:1rem;align-items:start}
+.nico{color:var(--muted);margin-top:.1rem}
+.nbody{font-size:.68rem;color:var(--muted);line-height:1.8;letter-spacing:.04em}
+.nbody strong{color:var(--text2)}
+
+/* footer */
+footer{position:relative;z-index:10;padding:1.8rem 3rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;margin-top:2rem}
+footer .copy{font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+footer .tline{font-family:var(--ff-display);font-size:.95rem;letter-spacing:.22em;color:var(--border2)}
+
+/* spinner */
+@keyframes spin{to{transform:rotate(360deg)}}
+.sp{width:16px;height:16px;border:2px solid rgba(0,0,0,.25);border-top-color:#08080b;border-radius:50%;animation:spin .6s linear infinite;display:none}
+.sp.show{display:inline-block}
+
+/* toast */
+.toast{position:fixed;bottom:2rem;right:2rem;background:var(--surface);border:1px solid var(--accent);color:var(--accent);font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;padding:.75rem 1.4rem;z-index:1000;display:none}
+.toast.show{display:block;animation:fi .3s}
+
+@media(max-width:640px){
+  header{padding:1.2rem}main{padding:3rem 1.2rem}
+  .vinfo{grid-template-columns:1fr}
+  .fmtgrid{grid-template-columns:repeat(2,1fr)}
+  footer{flex-direction:column;gap:.5rem;text-align:center}
+  h1{font-size:3.2rem}
+}
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<div class="scanline"></div>
+
+<div id="serverBanner">
+  Backend not running &mdash; open <strong>start.bat</strong> first, then visit
+  <a href="http://localhost:5000">http://localhost:5000</a>
+  &nbsp;(don't open index.html directly)
+</div>
+
+<header>
+  <div class="logo">VOR<em>TEX</em></div>
+  <div class="hdr-right">
+    <div class="sdot" id="sdot"></div>
+    <div class="badge">Universal Downloader v2.0</div>
+  </div>
+</header>
+
+<main>
+  <div class="eyebrow">1000+ Supported Sites</div>
+  <h1>GRAB<br><span class="ac">ANY VIDEO</span></h1>
+
+  <div class="pills" id="pills">
+    <div class="ppill" data-p="youtube">YouTube</div>
+    <div class="ppill" data-p="instagram">Instagram</div>
+    <div class="ppill" data-p="twitter">X / Twitter</div>
+    <div class="ppill" data-p="tiktok">TikTok</div>
+    <div class="ppill" data-p="facebook">Facebook</div>
+    <div class="ppill" data-p="vimeo">Vimeo</div>
+    <div class="ppill" data-p="reddit">Reddit</div>
+    <div class="ppill" data-p="dailymotion">Dailymotion</div>
+    <div class="ppill" data-p="twitch">Twitch</div>
+    <div class="ppill" data-p="rumble">Rumble</div>
+    <div class="ppill" data-p="bilibili">Bilibili</div>
+    <div class="ppill" data-p="other">+ More</div>
+  </div>
+
+  <div class="icard">
+    <label class="flabel" for="urlInput">Paste Video URL</label>
+    <div class="urow">
+      <div class="upfx">&#11041;</div>
+      <input id="urlInput" type="text" spellcheck="false" autocomplete="off"
+        placeholder="https://www.youtube.com/watch?v=...">
+      <div class="ubtns">
+        <button class="ubtn" onclick="pasteURL()">Paste</button>
+        <button class="ubtn" onclick="clearURL()">Clear</button>
+      </div>
+    </div>
+    <button class="abtn" id="abtn" onclick="analyzeURL()">
+      <span id="abtnLbl">ANALYZE URL</span>
+      <span class="sp" id="asp"></span>
+    </button>
+    <div class="fprog" id="fprog">
+      <div class="fpbar"><div class="fpfill" id="fpfill"></div></div>
+      <div class="fplbl" id="fplbl">Connecting...</div>
+    </div>
+    <div class="errmsg" id="errmsg"></div>
+  </div>
+
+  <div id="results">
+    <div class="divider">Video Info</div>
+    <div class="vinfo">
+      <div class="thumb" id="thumbWrap"><span class="thico">&#9654;</span></div>
+      <div class="vdet">
+        <div id="vPlat"></div>
+        <div class="vtitle" id="vTitle">-</div>
+        <div class="mchips">
+          <div class="mc">Channel <b id="vCh">-</b></div>
+          <div class="mc">Duration <b id="vDur">-</b></div>
+          <div class="mc">Views <b id="vViews">-</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider">Format &amp; Quality</div>
+    <p class="slabel">File Format</p>
+    <div class="fmtgrid" id="fmtgrid"></div>
+    <p class="slabel">Quality</p>
+    <div class="qrow" id="qrow"></div>
+
+    <div class="divider">Download</div>
+    <div class="dlrow">
+      <button class="dlbtn" id="dlbtn" onclick="startDownload()">&#8595; DOWNLOAD</button>
+      <button class="cpbtn" onclick="copyURL()">Copy URL</button>
+    </div>
+    <div class="dlprog" id="dlprog">
+      <div class="dlph"><span id="dlLbl">Preparing...</span><span id="dlPct">0%</span></div>
+      <div class="dlbar"><div class="dlfill" id="dlfill"></div></div>
+    </div>
+    <div class="dldone" id="dldone">
+      <div class="ddico">&#10003;</div>
+      <div class="ddtxt"><b id="ddFile">file.mp4</b>Download complete - check your downloads folder</div>
+    </div>
+  </div>
+
+  <div class="notice">
+    <div class="nico">&#9888;</div>
+    <div class="nbody">
+      <strong>Legal Notice:</strong> VORTEX uses <strong>yt-dlp</strong> to download publicly accessible video streams.
+      Only download content you own or have explicit permission to download.
+      Respect copyright laws and each platform's Terms of Service.
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="copy">&copy; 2026 VORTEX</div>
+  <div class="tline">DOWNLOAD. EVERYTHING.</div>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var FMTS_VIDEO = [
+  {type:'MP4',sub:'Universal'},
+  {type:'WEBM',sub:'VP9 - Web'},
+  {type:'MKV',sub:'H.265 - HQ'},
+  {type:'MOV',sub:'Apple'},
+  {type:'AVI',sub:'Legacy'},
+  {type:'3GP',sub:'Mobile'}
+];
+var FMTS_AUDIO = [
+  {type:'MP3',sub:'Audio - 320kbps',best:true},
+  {type:'AAC',sub:'Audio - HQ'},
+  {type:'FLAC',sub:'Audio - Lossless'},
+  {type:'OGG',sub:'Audio - Open'},
+  {type:'WAV',sub:'Audio - Raw'}
+];
+var AUDIO_SET = {MP3:1,AAC:1,FLAC:1,OGG:1,WAV:1};
+var PLAT_MAP = {
+  'youtube.com':'youtube','youtu.be':'youtube',
+  'instagram.com':'instagram',
+  'twitter.com':'twitter','x.com':'twitter',
+  'tiktok.com':'tiktok',
+  'facebook.com':'facebook','fb.watch':'facebook',
+  'vimeo.com':'vimeo',
+  'reddit.com':'reddit','v.redd.it':'reddit',
+  'dailymotion.com':'dailymotion',
+  'twitch.tv':'twitch','clips.twitch.tv':'twitch',
+  'rumble.com':'rumble','bilibili.com':'bilibili'
+};
+var state = {url:'',fmt:'MP4',quality:'1080p',jobId:null,vq:[],aq:[],mp4q:[]};
+
+function $(id){return document.getElementById(id)}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+
+function toast(msg,ms){
+  ms=ms||2600;var t=$('toast');t.textContent=msg;t.classList.add('show');
+  setTimeout(function(){t.classList.remove('show')},ms);
+}
+function showErr(msg){var e=$('errmsg');e.textContent='! '+msg;e.classList.add('show')}
+function clearErr(){$('errmsg').classList.remove('show')}
+function fmtDur(s){
+  if(!s)return '-';
+  var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;
+  if(h)return h+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');
+  return m+':'+String(sec).padStart(2,'0');
+}
+function fmtViews(n){
+  if(!n)return '-';
+  if(n>=1e9)return (n/1e9).toFixed(1)+'B';
+  if(n>=1e6)return (n/1e6).toFixed(1)+'M';
+  if(n>=1e3)return Math.round(n/1e3)+'K';
+  return n+'';
+}
+function detectPlat(url){
+  try{
+    var host=new URL(url).hostname.replace(/^www\./,'');
+    for(var d in PLAT_MAP){if(host===d||host.endsWith('.'+d))return PLAT_MAP[d]}
+  }catch(e){}
+  return 'other';
+}
+function setFP(pct,lbl){$('fprog').classList.add('show');$('fpfill').style.width=pct+'%';$('fplbl').textContent=lbl}
+function clearFP(){$('fprog').classList.remove('show');$('fpfill').style.width='0%'}
+
+/* backend health check */
+window.addEventListener('DOMContentLoaded',async function(){
+  try{
+    var r=await fetch('/api/health',{signal:AbortSignal.timeout(4000)});
+    if(r.ok){$('sdot').classList.add('live');setTimeout(function(){$('sdot').classList.remove('live')},2000)}
+  }catch(e){$('serverBanner').classList.add('show')}
+});
+
+/* url input */
+$('urlInput').addEventListener('input',function(){
+  var p=detectPlat(this.value.trim());
+  document.querySelectorAll('.ppill').forEach(function(el){el.classList.toggle('lit',el.dataset.p===p)});
+});
+$('urlInput').addEventListener('keydown',function(e){if(e.key==='Enter')analyzeURL()});
+
+async function pasteURL(){
+  try{var t=await navigator.clipboard.readText();$('urlInput').value=t;$('urlInput').dispatchEvent(new Event('input'));toast('URL pasted')}
+  catch(e){toast('Press Ctrl+V to paste')}
+}
+function clearURL(){$('urlInput').value='';$('urlInput').dispatchEvent(new Event('input'));$('results').classList.remove('show');clearErr();clearFP()}
+function copyURL(){var u=$('urlInput').value.trim()||state.url;if(!u)return;navigator.clipboard.writeText(u).then(function(){toast('URL copied')})}
+
+async function analyzeURL(){
+  var url=$('urlInput').value.trim();
+  clearErr();$('results').classList.remove('show');
+  if(!url){showErr('Please paste a video URL first.');return}
+  try{new URL(url)}catch(e){showErr('That does not look like a valid URL.');return}
+  state.url=url;
+  var btn=$('abtn');btn.disabled=true;
+  $('abtnLbl').textContent='ANALYZING';$('asp').classList.add('show');$('sdot').classList.add('live');
+  setFP(10,'Connecting to server...');
+  try{
+    setFP(30,'Fetching video metadata...');
+    var res=await fetch('/api/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})});
+    setFP(75,'Parsing formats...');
+    var data=await res.json();
+    if(!res.ok||data.error)throw new Error(data.error||'Could not fetch video info.');
+    setFP(100,'Done');await sleep(250);clearFP();
+    populateResults(data);$('results').classList.add('show');
+    $('results').scrollIntoView({behavior:'smooth',block:'start'});
+  }catch(e){
+    clearFP();
+    var msg=e.message||'';
+    if(msg.toLowerCase().includes('fetch')||msg.toLowerCase().includes('network'))
+      showErr('Cannot reach backend. Make sure start.bat is running and visit http://localhost:5000');
+    else showErr(msg);
+  }finally{
+    btn.disabled=false;$('abtnLbl').textContent='ANALYZE URL';$('asp').classList.remove('show');$('sdot').classList.remove('live');
+  }
+}
+
+function populateResults(info){
+  var tw=$('thumbWrap');
+  if(info.thumbnail)tw.innerHTML='<img src="'+info.thumbnail+'" alt="thumb" onerror="this.parentElement.innerHTML=\'<span class=thico>&#9654;</span>\'">';
+  else tw.innerHTML='<span class="thico">&#9654;</span>';
+  $('vTitle').textContent=info.title||'Untitled';
+  $('vCh').textContent=info.uploader||'-';
+  $('vDur').textContent=fmtDur(info.duration);
+  $('vViews').textContent=fmtViews(info.view_count);
+  $('vPlat').innerHTML='<span class="pbadge">'+(info.platform||'Unknown')+'</span>';
+  buildFmts([].concat(FMTS_VIDEO,FMTS_AUDIO));
+  selectFmt('MP4');
+  state.vq=info.qualities_video&&info.qualities_video.length?info.qualities_video:['1080p','720p','480p','360p'];
+  state.aq=info.qualities_audio||['320 kbps','256 kbps','192 kbps','128 kbps'];
+  state.mp4q=info.mp4_compat_qualities||[];
+  buildQuality(state.vq,'1080p');state.quality='1080p';
+  $('dlprog').classList.remove('show');$('dldone').classList.remove('show');$('dlbtn').disabled=false;
+}
+
+function buildFmts(fmts){
+  var g=$('fmtgrid');g.innerHTML='';
+  fmts.forEach(function(f){
+    var c=document.createElement('div');c.className='fc';c.dataset.fmt=f.type;
+    c.onclick=function(){selectFmt(f.type)};
+    c.innerHTML='<div class="fn">'+f.type+'</div><div class="fsub">'+f.sub+'</div>'+(f.best?'<div class="fbest">Best</div>':'');
+    g.appendChild(c);
+  });
+}
+function selectFmt(fmt){
+  state.fmt=fmt;
+  document.querySelectorAll('.fc').forEach(function(c){c.classList.toggle('sel',c.dataset.fmt===fmt)});
+  if(AUDIO_SET[fmt]){
+    buildQuality(state.aq,'320 kbps');state.quality='320 kbps';
+  }else{
+    var best = state.vq[0]||'1080p';
+    buildQuality(state.vq,best,fmt);state.quality=best;
+  }
+}
+function buildQuality(qs,sel,fmt){
+  var r=$('qrow');r.innerHTML='';
+  qs.forEach(function(q){
+    var isMp4 = fmt==='MP4';
+    var mp4Compat = !isMp4 || state.mp4q.indexOf(q)!==-1;
+    var p=document.createElement('div');p.className='qp'+(q===sel?' sel':'')+(mp4Compat?'':' mute');p.textContent=q;
+    p.onclick=function(){state.quality=q;document.querySelectorAll('.qp').forEach(function(x){x.classList.toggle('sel',x.textContent===q)})};
+    r.appendChild(p);
+  });
+}
+
+async function startDownload(){
+  if(!state.url)return;
+  var btn=$('dlbtn');btn.disabled=true;$('dldone').classList.remove('show');$('dlprog').classList.add('show');
+  setDL(0,'Queuing job...');
+  try{
+    var res=await fetch('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:state.url,format:state.fmt,quality:state.quality})});
+    var data=await res.json();
+    if(!res.ok||data.error)throw new Error(data.error||'Failed to start.');
+    state.jobId=data.job_id;setDL(5,'Job started...');
+    await pollJob(data.job_id);
+  }catch(e){showErr(e.message);$('dlprog').classList.remove('show');btn.disabled=false}
+}
+async function pollJob(jid){
+  while(true){
+    await sleep(900);
+    var s;
+    try{var r=await fetch('/api/status/'+jid);s=await r.json()}
+    catch(e){showErr('Lost connection.');$('dlprog').classList.remove('show');$('dlbtn').disabled=false;return}
+    if(s.error){showErr(s.error);$('dlprog').classList.remove('show');$('dlbtn').disabled=false;return}
+    var pct=s.progress||0;
+    var lbl={queued:'Waiting in queue...',starting:'Starting...',processing:'Converting / remuxing...'}[s.status]||('Downloading '+state.fmt+' '+state.quality+'... '+pct+'%');
+    setDL(pct,lbl);
+    if(s.status==='done'){
+      setDL(100,'Complete!');await sleep(300);
+      var a=document.createElement('a');a.href='/api/file/'+jid;a.download=s.filename||'video';document.body.appendChild(a);a.click();document.body.removeChild(a);
+      $('dlprog').classList.remove('show');$('ddFile').textContent=s.filename||'video';$('dldone').classList.add('show');
+      $('dlbtn').disabled=false;toast('Download complete!');return;
+    }
+  }
+}
+function setDL(pct,lbl){$('dlfill').style.width=pct+'%';$('dlPct').textContent=pct+'%';$('dlLbl').textContent=lbl}
+</script>
+</body>
+</html>

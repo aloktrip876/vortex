@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: vortex
+    env: docker
+    plan: free
+    autoDeploy: true
