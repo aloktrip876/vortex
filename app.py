@@ -10,6 +10,8 @@ import time
 import threading
 import uuid
 import shutil
+import tempfile
+import subprocess
 from pathlib import Path
 
 from flask import Flask, request, jsonify, send_file
@@ -17,10 +19,28 @@ from flask_cors import CORS
 import yt_dlp
 
 # ── Paths resolved relative to this script (works from any working dir) ───────
-BASE_DIR    = Path(__file__).parent.resolve()
-STATIC_DIR  = BASE_DIR / "static"
+BASE_DIR     = Path(__file__).parent.resolve()
+STATIC_DIR   = BASE_DIR / "static"
 DOWNLOAD_DIR = BASE_DIR / "downloads"
 DOWNLOAD_DIR.mkdir(exist_ok=True)
+
+import tempfile
+
+def _get_server_cookie_file():
+    """Return a valid cookie file path for yt-dlp to use server-side."""
+    # Option 1: explicit file path env var (paid Render plan / Secret Files)
+    file_path = os.environ.get("YTDLP_COOKIE_FILE")
+    if file_path and Path(file_path).exists() and Path(file_path).stat().st_size > 100:
+        return file_path
+
+    # Option 2: inline cookie content env var (free Render plan workaround)
+    content = os.environ.get("YOUTUBE_COOKIES_CONTENT", "").strip()
+    if len(content) > 100:
+        tmp = Path(tempfile.gettempdir()) / "yt_server_cookies.txt"
+        tmp.write_text(content, encoding="utf-8")
+        return str(tmp)
+
+    return None
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
 CORS(app)
@@ -31,6 +51,19 @@ jobs_lock = threading.Lock()
 
 FFMPEG_PATH = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
 FFMPEG_AVAILABLE = FFMPEG_PATH is not None
+
+# ── Auto-update yt-dlp on startup (keeps YouTube working long-term) ───────────
+def _auto_update_ytdlp():
+    """Silently update yt-dlp in background so YouTube never blocks due to old version."""
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "--quiet"],
+            capture_output=True, timeout=120
+        )
+    except Exception:
+        pass
+
+threading.Thread(target=_auto_update_ytdlp, daemon=True).start()
 
 # ── Cleanup old downloads every 5 min (keep 30 min) ──────────────────────────
 def _cleanup():
@@ -48,18 +81,6 @@ threading.Thread(target=_cleanup, daemon=True).start()
 
 # ── yt-dlp helpers ────────────────────────────────────────────────────────────
 
-def _write_cookie_file(text: str):
-    """Write a cookies.txt string to a temp file and return the path."""
-    if not text:
-        return None
-    p = DOWNLOAD_DIR / f"cookies_{uuid.uuid4().hex}.txt"
-    try:
-        p.write_text(text, encoding="utf-8")
-        return p
-    except Exception:
-        return None
-
-
 def base_opts(cookiefile=None):
     opts = {
         "quiet": True,
@@ -68,42 +89,49 @@ def base_opts(cookiefile=None):
         "geo_bypass": True,
         "socket_timeout": 30,
         "noplaylist": True,
+        # Try multiple YouTube clients in order — android/tv_embedded bypass
+        # bot-protection without needing cookies in most cases
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "tv_embedded", "web_creator", "web"],
+            }
+        },
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+        },
     }
 
-    # Allow using cookies to bypass YouTube "not a bot" / age-restricted checks.
-    # Examples:
-    #   set YTDLP_COOKIES_FROM_BROWSER=chrome
-    #   set YTDLP_COOKIE_FILE=path\to\cookies.txt
-    cookies_from_browser = os.environ.get("YTDLP_COOKIES_FROM_BROWSER")
-    if cookies_from_browser:
-        # yt-dlp expects a tuple/list for this option
-        opts["cookiesfrombrowser"] = tuple(c.strip() for c in cookies_from_browser.split(",") if c.strip())
-
-    cookie_file_env = os.environ.get("YTDLP_COOKIE_FILE")
+    # 1. Use explicitly passed cookie file (highest priority)
     if cookiefile:
         opts["cookiefile"] = str(cookiefile)
-    elif cookie_file_env:
-        opts["cookiefile"] = cookie_file_env
+    else:
+        # 2. Use server-side cookie file (set once by admin on Render)
+        server_cf = _get_server_cookie_file()
+        if server_cf:
+            opts["cookiefile"] = server_cf
+        else:
+            # 3. Fallback: try reading from browser on the server (dev only)
+            browser = os.environ.get("YTDLP_COOKIES_FROM_BROWSER")
+            if browser:
+                opts["cookiesfrombrowser"] = tuple(
+                    c.strip() for c in browser.split(",") if c.strip()
+                )
 
     if FFMPEG_PATH:
-        # Help yt-dlp find ffmpeg even if PATH is inconsistent.
         opts["ffmpeg_location"] = FFMPEG_PATH
 
-    # Use alternate YouTube clients that bypass bot-protection without needing cookies.
-    opts["extractor_args"] = {
-        "youtube": {
-            "player_client": ["android", "web_creator"],
-        }
-    }
-
     return opts
+
 
 def sanitize(name: str) -> str:
     cleaned = re.sub(r'[\\/*?:"<>|]', "_", name).strip()
     cleaned = cleaned.strip(". ")
     if not cleaned:
         cleaned = "video"
-    # Avoid Windows reserved device names
     reserved = {
         "CON","PRN","AUX","NUL",
         "COM1","COM2","COM3","COM4","COM5","COM6","COM7","COM8","COM9",
@@ -163,7 +191,6 @@ def build_opts(fmt: str, quality: str, job_id: str, cookie_file=None):
                 postprocessors.append({"key": "FFmpegVideoConvertor", "preferedformat": ext})
             merge_fmt = ext
         else:
-            # Without ffmpeg, prefer a single-file stream that already has audio.
             fmt_selector = f"best[height<={h}]/best"
             merge_fmt = None
 
@@ -203,21 +230,21 @@ def health():
         "yt_dlp_version": yt_dlp.version.__version__,
         "ffmpeg_available": FFMPEG_AVAILABLE,
         "ffmpeg_path": FFMPEG_PATH or "",
+        "server_cookies_active": _get_server_cookie_file() is not None,
     })
 
 def _format_yt_dlp_error(exc: Exception) -> str:
     """Normalize common yt-dlp errors into friendlier messages."""
     msg = str(exc)
-    if "Sign in to confirm you\'re not a bot" in msg or "sign in to confirm" in msg.lower():
-        return (
-            "yt-dlp is blocked by YouTube bot-protection. "
-            "Provide cookies (via environment vars or the UI) so yt-dlp can authenticate. "
-            "See README for details."
-        )
+    if "Sign in to confirm" in msg or "sign in to confirm" in msg.lower() or "bot" in msg.lower():
+        return "This video could not be downloaded. It may be region-locked or restricted."
     if "This video is unavailable" in msg or "video unavailable" in msg.lower():
-        return ("The video may be private, deleted, or blocked in your region. "
-                "Try a different URL.")
-    return msg
+        return "This video is unavailable. It may be private, deleted, or blocked in your region."
+    if "Private video" in msg:
+        return "This is a private video and cannot be downloaded."
+    if "age" in msg.lower() and "restrict" in msg.lower():
+        return "This video is age-restricted and cannot be downloaded."
+    return "Download failed. Please check the URL and try again."
 
 
 @app.route("/api/info", methods=["POST"])
@@ -227,23 +254,15 @@ def api_info():
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
-    cookies = (data.get("cookies") or "").strip()
-    cookie_file = _write_cookie_file(cookies) if cookies else None
-
+    # Server handles cookies silently — user never needs to provide them
     try:
-        opts = {**base_opts(cookiefile=cookie_file), "skip_download": True}
+        opts = {**base_opts(), "skip_download": True}
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
     except yt_dlp.utils.DownloadError as e:
         return jsonify({"error": _format_yt_dlp_error(e)}), 422
     except Exception as e:
         return jsonify({"error": f"Failed to fetch info: {e}"}), 500
-    finally:
-        if cookie_file and cookie_file.exists():
-            try:
-                cookie_file.unlink(missing_ok=True)
-            except Exception:
-                pass
 
     # Collect heights
     heights = set()
@@ -293,8 +312,6 @@ def api_download():
     url     = data.get("url", "").strip()
     fmt     = data.get("format", "MP4").upper()
     quality = data.get("quality", "1080p")
-    cookies = (data.get("cookies") or "").strip()
-    cookie_file = _write_cookie_file(cookies) if cookies else None
 
     if not url:
         return jsonify({"error": "No URL"}), 400
@@ -305,7 +322,8 @@ def api_download():
     with jobs_lock:
         jobs[job_id] = {"status":"queued","progress":0,"file_path":None,"error":None,"filename":None}
 
-    t = threading.Thread(target=_worker, args=(job_id, url, fmt, quality, cookie_file), daemon=True)
+    # Server handles cookies — no cookie_file passed from user
+    t = threading.Thread(target=_worker, args=(job_id, url, fmt, quality, None), daemon=True)
     t.start()
     return jsonify({"job_id": job_id})
 
@@ -318,9 +336,7 @@ def _worker(job_id, url, fmt, quality, cookie_file=None):
             info = ydl.extract_info(url, download=True)
         title = sanitize(info.get("title","video"))
 
-        # Find downloaded file
         candidates = list(DOWNLOAD_DIR.glob(f"{job_id}.*"))
-        # Prefer the final merged/converted file (largest)
         candidates = [c for c in candidates if not c.name.endswith(".part")]
         if not candidates:
             raise FileNotFoundError("Download produced no output file.")
@@ -330,7 +346,6 @@ def _worker(job_id, url, fmt, quality, cookie_file=None):
         final_name = f"{title}{final_ext}"
         final_path = DOWNLOAD_DIR / f"{job_id}_final{final_ext}"
         found.rename(final_path)
-        # clean up any leftover part files
         for c in DOWNLOAD_DIR.glob(f"{job_id}.*"):
             try: c.unlink(missing_ok=True)
             except: pass
@@ -342,12 +357,6 @@ def _worker(job_id, url, fmt, quality, cookie_file=None):
         err = _format_yt_dlp_error(e)
         with jobs_lock:
             jobs[job_id].update({"status":"error","error":err})
-    finally:
-        if cookie_file and cookie_file.exists():
-            try:
-                cookie_file.unlink(missing_ok=True)
-            except Exception:
-                pass
 
 @app.route("/api/status/<job_id>")
 def api_status(job_id):
@@ -381,6 +390,7 @@ if __name__ == "__main__":
     print("\n" + "="*52)
     print("  VORTEX Video Downloader")
     print(f"  yt-dlp version: {yt_dlp.version.__version__}")
+    print(f"  Server cookies: {'✓ Active' if _get_server_cookie_file() else '✗ Not set (using client fallbacks)'}")
     print("  Open: http://localhost:5000")
     print("="*52 + "\n")
     port = int(os.environ.get("PORT", "5000"))
